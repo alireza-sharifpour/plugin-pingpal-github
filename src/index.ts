@@ -1,4 +1,4 @@
-import { starterPlugin } from './plugin.ts';
+import { pingPalGitHubPlugin } from "./plugin.ts";
 
-export { starterPlugin, StarterService } from './plugin.ts';
-export default starterPlugin;
+export { pingPalGitHubPlugin, StarterService } from "./plugin.ts";
+export default pingPalGitHubPlugin;

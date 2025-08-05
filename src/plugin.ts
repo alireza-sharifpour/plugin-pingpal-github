@@ -1,4 +1,4 @@
-import type { Plugin } from '@elizaos/core';
+import type { Plugin } from "@elizaos/core";
 import {
   type Action,
   type ActionResult,
@@ -16,8 +16,8 @@ import {
   type MessagePayload,
   type WorldPayload,
   EventType,
-} from '@elizaos/core';
-import { z } from 'zod';
+} from "@elizaos/core";
+import { z } from "zod";
 
 /**
  * Defines the configuration schema for a plugin, including the validation rules for the plugin name.
@@ -27,11 +27,13 @@ import { z } from 'zod';
 const configSchema = z.object({
   EXAMPLE_PLUGIN_VARIABLE: z
     .string()
-    .min(1, 'Example plugin variable is not provided')
+    .min(1, "Example plugin variable is not provided")
     .optional()
     .transform((val) => {
       if (!val) {
-        logger.warn('Example plugin variable is not provided (this is expected)');
+        logger.warn(
+          "Example plugin variable is not provided (this is expected)"
+        );
       }
       return val;
     }),
@@ -52,9 +54,9 @@ const configSchema = z.object({
  * @property {Object[]} examples - An array of example inputs and expected outputs for the action.
  */
 const helloWorldAction: Action = {
-  name: 'HELLO_WORLD',
-  similes: ['GREET', 'SAY_HELLO'],
-  description: 'Responds with a simple hello world message',
+  name: "HELLO_WORLD",
+  similes: ["GREET", "SAY_HELLO"],
+  description: "Responds with a simple hello world message",
 
   validate: async (
     _runtime: IAgentRuntime,
@@ -74,12 +76,12 @@ const helloWorldAction: Action = {
     _responses?: Memory[]
   ): Promise<ActionResult> => {
     try {
-      logger.info('Handling HELLO_WORLD action');
+      logger.info("Handling HELLO_WORLD action");
 
       // Simple response content for callback
       const responseContent: Content = {
-        text: 'hello world!',
-        actions: ['HELLO_WORLD'],
+        text: "hello world!",
+        actions: ["HELLO_WORLD"],
         source: message.content.source,
       };
 
@@ -90,15 +92,15 @@ const helloWorldAction: Action = {
 
       // Return ActionResult
       return {
-        text: 'hello world!',
+        text: "hello world!",
         success: true,
         data: {
-          actions: ['HELLO_WORLD'],
+          actions: ["HELLO_WORLD"],
           source: message.content.source,
         },
       };
     } catch (error) {
-      logger.error('Error in HELLO_WORLD action:', error);
+      logger.error("Error in HELLO_WORLD action:", error);
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
@@ -109,16 +111,16 @@ const helloWorldAction: Action = {
   examples: [
     [
       {
-        name: '{{name1}}',
+        name: "{{name1}}",
         content: {
-          text: 'Can you say hello?',
+          text: "Can you say hello?",
         },
       },
       {
-        name: '{{name2}}',
+        name: "{{name2}}",
         content: {
-          text: 'hello world!',
-          actions: ['HELLO_WORLD'],
+          text: "hello world!",
+          actions: ["HELLO_WORLD"],
         },
       },
     ],
@@ -130,8 +132,8 @@ const helloWorldAction: Action = {
  * This demonstrates the simplest possible provider implementation
  */
 const helloWorldProvider: Provider = {
-  name: 'HELLO_WORLD_PROVIDER',
-  description: 'A simple example provider',
+  name: "HELLO_WORLD_PROVIDER",
+  description: "A simple example provider",
 
   get: async (
     _runtime: IAgentRuntime,
@@ -139,7 +141,7 @@ const helloWorldProvider: Provider = {
     _state: State | undefined
   ): Promise<ProviderResult> => {
     return {
-      text: 'I am a provider',
+      text: "I am a provider",
       values: {},
       data: {},
     };
@@ -147,45 +149,47 @@ const helloWorldProvider: Provider = {
 };
 
 export class StarterService extends Service {
-  static override serviceType = 'starter';
+  static override serviceType = "starter";
 
   override capabilityDescription =
-    'This is a starter service which is attached to the agent through the starter plugin.';
+    "This is a starter service which is attached to the agent through the starter plugin.";
 
   constructor(runtime: IAgentRuntime) {
     super(runtime);
   }
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
-    logger.info('Starting starter service');
+    logger.info("Starting starter service");
     const service = new StarterService(runtime);
     return service;
   }
 
   static override async stop(runtime: IAgentRuntime): Promise<void> {
-    logger.info('Stopping starter service');
+    logger.info("Stopping starter service");
     const service = runtime.getService(StarterService.serviceType);
     if (!service) {
-      throw new Error('Starter service not found');
+      throw new Error("Starter service not found");
     }
-    if ('stop' in service && typeof service.stop === 'function') {
+    if ("stop" in service && typeof service.stop === "function") {
       await service.stop();
     }
   }
 
   override async stop(): Promise<void> {
-    logger.info('Starter service stopped');
+    logger.info("Starter service stopped");
   }
 }
 
-export const starterPlugin: Plugin = {
-  name: 'plugin-pingpal-github',
-  description: 'Quick backend-only plugin template for elizaOS',
+export const pingPalGitHubPlugin: Plugin = {
+  name: "pingpal-github",
+  description:
+    "Monitors GitHub notifications and sends important ones via Telegram.",
   config: {
     EXAMPLE_PLUGIN_VARIABLE: process.env.EXAMPLE_PLUGIN_VARIABLE,
   },
-  async init(config: Record<string, string>) {
-    logger.info('Initializing plugin-pingpal-github');
+  async init(config: Record<string, string>, runtime: IAgentRuntime) {
+    console.log("Initializing PingPal GitHub Plugin....");
+    // Register scheduled polling action here
     try {
       const validatedConfig = await configSchema.parseAsync(config);
 
@@ -196,7 +200,7 @@ export const starterPlugin: Plugin = {
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new Error(
-          `Invalid plugin configuration: ${error.errors.map((e) => e.message).join(', ')}`
+          `Invalid plugin configuration: ${error.errors.map((e) => e.message).join(", ")}`
         );
       }
       throw error;
@@ -207,7 +211,7 @@ export const starterPlugin: Plugin = {
       _runtime,
       { prompt, stopSequences = [] }: GenerateTextParams
     ) => {
-      return 'Never gonna give you up, never gonna let you down, never gonna run around and desert you...';
+      return "Never gonna give you up, never gonna let you down, never gonna run around and desert you...";
     },
     [ModelType.TEXT_LARGE]: async (
       _runtime,
@@ -220,18 +224,18 @@ export const starterPlugin: Plugin = {
         presencePenalty = 0.7,
       }: GenerateTextParams
     ) => {
-      return 'Never gonna make you cry, never gonna say goodbye, never gonna tell a lie and hurt you...';
+      return "Never gonna make you cry, never gonna say goodbye, never gonna tell a lie and hurt you...";
     },
   },
   routes: [
     {
-      name: 'api-status',
-      path: '/api/status',
-      type: 'GET',
+      name: "api-status",
+      path: "/api/status",
+      type: "GET",
       handler: async (_req: any, res: any) => {
         res.json({
-          status: 'ok',
-          plugin: 'quick-starter',
+          status: "ok",
+          plugin: "quick-starter",
           timestamp: new Date().toISOString(),
         });
       },
@@ -240,33 +244,35 @@ export const starterPlugin: Plugin = {
   events: {
     [EventType.MESSAGE_RECEIVED]: [
       async (params: MessagePayload) => {
-        logger.debug('MESSAGE_RECEIVED event received');
-        logger.debug('Message:', params.message);
+        logger.debug("MESSAGE_RECEIVED event received");
+        logger.debug("Message:", params.message);
       },
     ],
     [EventType.VOICE_MESSAGE_RECEIVED]: [
       async (params: MessagePayload) => {
-        logger.debug('VOICE_MESSAGE_RECEIVED event received');
-        logger.debug('Message:', params.message);
+        logger.debug("VOICE_MESSAGE_RECEIVED event received");
+        logger.debug("Message:", params.message);
       },
     ],
     [EventType.WORLD_CONNECTED]: [
       async (params: WorldPayload) => {
-        logger.debug('WORLD_CONNECTED event received');
-        logger.debug('World:', params.world);
+        logger.debug("WORLD_CONNECTED event received");
+        logger.debug("World:", params.world);
       },
     ],
     [EventType.WORLD_JOINED]: [
       async (params: WorldPayload) => {
-        logger.debug('WORLD_JOINED event received');
-        logger.debug('World:', params.world);
+        logger.debug("WORLD_JOINED event received");
+        logger.debug("World:", params.world);
       },
     ],
   },
   services: [StarterService],
-  actions: [helloWorldAction],
+  actions: [
+    /* Actions added later */
+  ],
   providers: [helloWorldProvider],
   // dependencies: ['@elizaos/plugin-knowledge'], <--- plugin dependencies go here (if requires another plugin)
 };
 
-export default starterPlugin;
+export default pingPalGitHubPlugin;

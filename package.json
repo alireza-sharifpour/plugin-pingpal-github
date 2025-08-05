@@ -1,6 +1,6 @@
 {
   "name": "plugin-pingpal-github",
-  "description": "Quick backend-only plugin template for ElizaOS",
+  "description": "PingPal GitHub-to-Telegram Monitor - Monitors GitHub notifications and sends important ones via Telegram",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
