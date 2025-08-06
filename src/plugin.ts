@@ -18,6 +18,7 @@ import {
   EventType,
 } from "@elizaos/core";
 import { z } from "zod";
+import { pollGitHubNotificationsAction } from "./actions/pollGitHubNotifications";
 
 /**
  * Defines the configuration schema for a plugin, including the validation rules for the plugin name.
@@ -189,7 +190,33 @@ export const pingPalGitHubPlugin: Plugin = {
   },
   async init(config: Record<string, string>, runtime: IAgentRuntime) {
     console.log("Initializing PingPal GitHub Plugin....");
-    // Register scheduled polling action here
+
+    // Validate required configuration
+    const accessToken = process.env.GITHUB_ACCESS_TOKEN;
+    const targetUsername = process.env.PINGPAL_TARGET_GITHUB_USERNAME;
+    const targetTelegramUserId = process.env.PINGPAL_TARGET_TELEGRAM_USERID;
+
+    if (!accessToken) {
+      throw new Error("GITHUB_ACCESS_TOKEN environment variable is required");
+    }
+    if (!targetUsername) {
+      throw new Error(
+        "PINGPAL_TARGET_GITHUB_USERNAME environment variable is required"
+      );
+    }
+    if (!targetTelegramUserId) {
+      throw new Error(
+        "PINGPAL_TARGET_TELEGRAM_USERID environment variable is required"
+      );
+    }
+
+    console.log(
+      `[PingPal GitHub] Configured to monitor GitHub notifications for user: ${targetUsername}`
+    );
+    console.log(
+      `[PingPal GitHub] Will send alerts to Telegram user: ${targetTelegramUserId}`
+    );
+
     try {
       const validatedConfig = await configSchema.parseAsync(config);
 
@@ -205,6 +232,35 @@ export const pingPalGitHubPlugin: Plugin = {
       }
       throw error;
     }
+
+    // Set up periodic polling (every 5 minutes)
+    const pollInterval = 5 * 60 * 1000; // 5 minutes
+    setInterval(async () => {
+      try {
+        // Create a memory object for internal polling trigger
+        const pollingMemory: Memory = {
+          id: crypto.randomUUID(),
+          entityId: runtime.agentId,
+          roomId: crypto.randomUUID(),
+          agentId: runtime.agentId,
+          content: { text: "Polling GitHub notifications", source: "internal" },
+          createdAt: Date.now(),
+        };
+
+        // Execute the polling action directly
+        if (
+          await pollGitHubNotificationsAction.validate(runtime, pollingMemory)
+        ) {
+          await pollGitHubNotificationsAction.handler(runtime, pollingMemory);
+        }
+      } catch (error) {
+        logger.error("[PingPal GitHub] Error during periodic polling:", error);
+      }
+    }, pollInterval);
+
+    console.log(
+      "[PingPal GitHub] Registered periodic GitHub notification polling (5 minute intervals)."
+    );
   },
   models: {
     [ModelType.TEXT_SMALL]: async (
@@ -268,9 +324,7 @@ export const pingPalGitHubPlugin: Plugin = {
     ],
   },
   services: [StarterService],
-  actions: [
-    /* Actions added later */
-  ],
+  actions: [pollGitHubNotificationsAction],
   providers: [helloWorldProvider],
   // dependencies: ['@elizaos/plugin-knowledge'], <--- plugin dependencies go here (if requires another plugin)
 };
