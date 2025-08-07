@@ -24,7 +24,7 @@ export const pollGitHubNotificationsAction: Action = {
   validate: async (
     runtime: IAgentRuntime,
     message: Memory,
-    state?: State
+    state?: State,
   ): Promise<boolean> => {
     // This action is triggered internally, not by user messages
     return true;
@@ -35,7 +35,7 @@ export const pollGitHubNotificationsAction: Action = {
     message: Memory,
     state?: State,
     options?: Record<string, unknown>,
-    callback?: HandlerCallback
+    callback?: HandlerCallback,
   ): Promise<ActionResult> => {
     try {
       logger.info("[PingPal GitHub] Starting GitHub notifications polling...");
@@ -52,7 +52,7 @@ export const pollGitHubNotificationsAction: Action = {
       const targetUsername = process.env.PINGPAL_TARGET_GITHUB_USERNAME;
       if (!targetUsername) {
         logger.error(
-          "[PingPal GitHub] PINGPAL_TARGET_GITHUB_USERNAME not configured"
+          "[PingPal GitHub] PINGPAL_TARGET_GITHUB_USERNAME not configured",
         );
         return {
           success: false,
@@ -66,8 +66,8 @@ export const pollGitHubNotificationsAction: Action = {
       // Filter for relevant notification types
       const relevantNotifications = notifications.filter((notification) =>
         ["mention", "review_requested", "assign", "author"].includes(
-          notification.reason
-        )
+          notification.reason,
+        ),
       );
 
       logger.info(
@@ -75,11 +75,10 @@ export const pollGitHubNotificationsAction: Action = {
           total: notifications.length,
           relevant: relevantNotifications.length,
         },
-        "[PingPal GitHub] Filtered GitHub notifications"
+        "[PingPal GitHub] Filtered GitHub notifications",
       );
 
-      // Log each relevant notification for now
-      // TODO: In Task 7, these will be processed by ANALYZE_GITHUB_NOTIFICATION action
+      // Process each relevant notification
       for (const notification of relevantNotifications) {
         logger.info(
           {
@@ -89,8 +88,43 @@ export const pollGitHubNotificationsAction: Action = {
             subject: notification.subject.title,
             type: notification.subject.type,
           },
-          "[PingPal GitHub] Found relevant notification"
+          "[PingPal GitHub] Processing relevant notification",
         );
+
+        // Create a memory for the analysis action
+        const analysisMemory: Memory = {
+          id: crypto.randomUUID(),
+          entityId: runtime.agentId,
+          roomId: message.roomId,
+          agentId: runtime.agentId,
+          content: {
+            text: "Analyze GitHub notification",
+            githubNotification: notification,
+          },
+          createdAt: Date.now(),
+        };
+
+        // Find and execute the ANALYZE_GITHUB_NOTIFICATION action
+        const analyzeAction = runtime.actions?.find(
+          (action) => action.name === "ANALYZE_GITHUB_NOTIFICATION",
+        );
+
+        if (analyzeAction) {
+          try {
+            if (await analyzeAction.validate(runtime, analysisMemory)) {
+              await analyzeAction.handler(runtime, analysisMemory);
+            }
+          } catch (error) {
+            logger.error(
+              { error, notificationId: notification.id },
+              "[PingPal GitHub] Failed to analyze notification",
+            );
+          }
+        } else {
+          logger.warn(
+            "[PingPal GitHub] ANALYZE_GITHUB_NOTIFICATION action not found",
+          );
+        }
       }
 
       return {
@@ -105,7 +139,7 @@ export const pollGitHubNotificationsAction: Action = {
     } catch (error) {
       logger.error(
         { error },
-        "[PingPal GitHub] Failed to poll GitHub notifications"
+        "[PingPal GitHub] Failed to poll GitHub notifications",
       );
       return {
         success: false,

@@ -45,21 +45,21 @@ export class GitHubService {
 
       if (!response.ok) {
         throw new Error(
-          `GitHub API error: ${response.status} ${response.statusText}`
+          `GitHub API error: ${response.status} ${response.statusText}`,
         );
       }
 
       const notifications: GitHubNotification[] = await response.json();
       logger.debug(
         { count: notifications.length },
-        "[PingPal GitHub] Retrieved notifications from GitHub API"
+        "[PingPal GitHub] Retrieved notifications from GitHub API",
       );
 
       return notifications;
     } catch (error) {
       logger.error(
         { error },
-        "[PingPal GitHub] Failed to fetch notifications from GitHub API"
+        "[PingPal GitHub] Failed to fetch notifications from GitHub API",
       );
       throw error;
     }
@@ -79,7 +79,7 @@ export class GitHubService {
     } catch (error) {
       logger.warn(
         { error, notificationId },
-        "[PingPal GitHub] Failed to mark notification as read"
+        "[PingPal GitHub] Failed to mark notification as read",
       );
     }
   }
