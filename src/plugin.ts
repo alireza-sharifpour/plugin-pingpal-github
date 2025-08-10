@@ -19,6 +19,8 @@ import {
 } from "@elizaos/core";
 import { z } from "zod";
 import { pollGitHubNotificationsAction } from "./actions/pollGitHubNotifications";
+import { analyzeGitHubNotificationAction } from "./actions/analyzeGitHubNotification";
+import { sendTelegramNotificationAction } from "./actions/sendTelegramNotification";
 
 /**
  * Defines the configuration schema for a plugin, including the validation rules for the plugin name.
@@ -33,7 +35,7 @@ const configSchema = z.object({
     .transform((val) => {
       if (!val) {
         logger.warn(
-          "Example plugin variable is not provided (this is expected)"
+          "Example plugin variable is not provided (this is expected)",
         );
       }
       return val;
@@ -62,7 +64,7 @@ const helloWorldAction: Action = {
   validate: async (
     _runtime: IAgentRuntime,
     _message: Memory,
-    _state: State | undefined
+    _state: State | undefined,
   ): Promise<boolean> => {
     // Always valid
     return true;
@@ -74,7 +76,7 @@ const helloWorldAction: Action = {
     _state: State | undefined,
     _options: Record<string, unknown> = {},
     callback?: HandlerCallback,
-    _responses?: Memory[]
+    _responses?: Memory[],
   ): Promise<ActionResult> => {
     try {
       logger.info("Handling HELLO_WORLD action");
@@ -139,7 +141,7 @@ const helloWorldProvider: Provider = {
   get: async (
     _runtime: IAgentRuntime,
     _message: Memory,
-    _state: State | undefined
+    _state: State | undefined,
   ): Promise<ProviderResult> => {
     return {
       text: "I am a provider",
@@ -201,20 +203,20 @@ export const pingPalGitHubPlugin: Plugin = {
     }
     if (!targetUsername) {
       throw new Error(
-        "PINGPAL_TARGET_GITHUB_USERNAME environment variable is required"
+        "PINGPAL_TARGET_GITHUB_USERNAME environment variable is required",
       );
     }
     if (!targetTelegramUserId) {
       throw new Error(
-        "PINGPAL_TARGET_TELEGRAM_USERID environment variable is required"
+        "PINGPAL_TARGET_TELEGRAM_USERID environment variable is required",
       );
     }
 
     console.log(
-      `[PingPal GitHub] Configured to monitor GitHub notifications for user: ${targetUsername}`
+      `[PingPal GitHub] Configured to monitor GitHub notifications for user: ${targetUsername}`,
     );
     console.log(
-      `[PingPal GitHub] Will send alerts to Telegram user: ${targetTelegramUserId}`
+      `[PingPal GitHub] Will send alerts to Telegram user: ${targetTelegramUserId}`,
     );
 
     try {
@@ -227,7 +229,7 @@ export const pingPalGitHubPlugin: Plugin = {
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new Error(
-          `Invalid plugin configuration: ${error.errors.map((e) => e.message).join(", ")}`
+          `Invalid plugin configuration: ${error.errors.map((e) => e.message).join(", ")}`,
         );
       }
       throw error;
@@ -259,13 +261,13 @@ export const pingPalGitHubPlugin: Plugin = {
     }, pollInterval);
 
     console.log(
-      "[PingPal GitHub] Registered periodic GitHub notification polling (5 minute intervals)."
+      "[PingPal GitHub] Registered periodic GitHub notification polling (5 minute intervals).",
     );
   },
   models: {
     [ModelType.TEXT_SMALL]: async (
       _runtime,
-      { prompt, stopSequences = [] }: GenerateTextParams
+      { prompt, stopSequences = [] }: GenerateTextParams,
     ) => {
       return "Never gonna give you up, never gonna let you down, never gonna run around and desert you...";
     },
@@ -278,7 +280,7 @@ export const pingPalGitHubPlugin: Plugin = {
         temperature = 0.7,
         frequencyPenalty = 0.7,
         presencePenalty = 0.7,
-      }: GenerateTextParams
+      }: GenerateTextParams,
     ) => {
       return "Never gonna make you cry, never gonna say goodbye, never gonna tell a lie and hurt you...";
     },
@@ -324,7 +326,11 @@ export const pingPalGitHubPlugin: Plugin = {
     ],
   },
   services: [StarterService],
-  actions: [pollGitHubNotificationsAction],
+  actions: [
+    pollGitHubNotificationsAction,
+    analyzeGitHubNotificationAction,
+    sendTelegramNotificationAction,
+  ],
   providers: [helloWorldProvider],
   // dependencies: ['@elizaos/plugin-knowledge'], <--- plugin dependencies go here (if requires another plugin)
 };
