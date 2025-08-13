@@ -235,8 +235,8 @@ export const pingPalGitHubPlugin: Plugin = {
       throw error;
     }
 
-    // Set up periodic polling (every 5 minutes)
-    const pollInterval = 5 * 60 * 1000; // 5 minutes
+    // Set up periodic polling (every 30 seconds)
+    const pollInterval = 30 * 1000; // 30 seconds
     setInterval(async () => {
       try {
         // Create a memory object for internal polling trigger
@@ -261,7 +261,7 @@ export const pingPalGitHubPlugin: Plugin = {
     }, pollInterval);
 
     console.log(
-      "[PingPal GitHub] Registered periodic GitHub notification polling (5 minute intervals).",
+      "[PingPal GitHub] Registered periodic GitHub notification polling (30 second intervals).",
     );
   },
   models: {
