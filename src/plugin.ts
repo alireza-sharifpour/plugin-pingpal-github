@@ -3,11 +3,9 @@ import {
   type Action,
   type ActionResult,
   type Content,
-  type GenerateTextParams,
   type HandlerCallback,
   type IAgentRuntime,
   type Memory,
-  ModelType,
   type Provider,
   type ProviderResult,
   Service,
@@ -240,10 +238,12 @@ export const pingPalGitHubPlugin: Plugin = {
     setInterval(async () => {
       try {
         // Create a memory object for internal polling trigger
+        // Use a consistent internal roomId to avoid FK constraints
+        const INTERNAL_ROOM_ID = "00000000-0000-0000-0000-000000000000"; // Fixed UUID for internal operations
         const pollingMemory: Memory = {
           id: crypto.randomUUID(),
           entityId: runtime.agentId,
-          roomId: crypto.randomUUID(),
+          roomId: INTERNAL_ROOM_ID,
           agentId: runtime.agentId,
           content: { text: "Polling GitHub notifications", source: "internal" },
           createdAt: Date.now(),
@@ -265,25 +265,7 @@ export const pingPalGitHubPlugin: Plugin = {
     );
   },
   models: {
-    [ModelType.TEXT_SMALL]: async (
-      _runtime,
-      { prompt, stopSequences = [] }: GenerateTextParams,
-    ) => {
-      return "Never gonna give you up, never gonna let you down, never gonna run around and desert you...";
-    },
-    [ModelType.TEXT_LARGE]: async (
-      _runtime,
-      {
-        prompt,
-        stopSequences = [],
-        maxTokens = 8192,
-        temperature = 0.7,
-        frequencyPenalty = 0.7,
-        presencePenalty = 0.7,
-      }: GenerateTextParams,
-    ) => {
-      return "Never gonna make you cry, never gonna say goodbye, never gonna tell a lie and hurt you...";
-    },
+    // Remove the placeholder models to let ElizaOS use its default model implementations
   },
   routes: [
     {

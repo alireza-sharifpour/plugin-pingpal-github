@@ -2,10 +2,7 @@ import { logger } from "@elizaos/core";
 
 export interface GitHubNotification {
   id: string;
-  thread: {
-    id: string;
-    url: string;
-  };
+  url: string;
   subject: {
     title: string;
     url: string | null;
@@ -21,7 +18,7 @@ export interface GitHubNotification {
   };
   updated_at: string;
   last_read_at: string | null;
-  url: string;
+  unread: boolean;
 }
 
 export class GitHubService {
@@ -34,7 +31,13 @@ export class GitHubService {
 
   async getNotifications(): Promise<GitHubNotification[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/notifications`, {
+      // Get last 20 notifications (both read and unread)
+      const params = new URLSearchParams({
+        all: 'true',        // Include read notifications
+        per_page: '20'      // Limit to 20 notifications
+      });
+      
+      const response = await fetch(`${this.baseUrl}/notifications?${params}`, {
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
           Accept: "application/vnd.github+json",

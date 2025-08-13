@@ -11,6 +11,10 @@ import type {
 import { logger, ModelType, parseJSONObjectFromText } from "@elizaos/core";
 import { GitHubNotification } from "../services/githubService";
 
+// In-memory cache for processed notifications as fallback
+const processedNotificationIds = new Set<string>();
+const MAX_CACHE_SIZE = 1000; // Keep last 1000 processed notification IDs in memory
+
 export const analyzeGitHubNotificationAction: Action = {
   name: "ANALYZE_GITHUB_NOTIFICATION",
   similes: ["analyze github notification", "process github alert"],
@@ -39,14 +43,28 @@ export const analyzeGitHubNotificationAction: Action = {
       logger.info(
         {
           notificationId: notification.id,
-          threadId: notification.thread.id,
           reason: notification.reason,
           repository: notification.repository.full_name,
+          subject: notification.subject.title,
+          type: notification.subject.type,
         },
         "[PingPal GitHub] Analyzing GitHub notification...",
       );
 
-      // Check for duplicates
+      // Check for duplicates - First check in-memory cache for fast lookup
+      if (processedNotificationIds.has(notification.id)) {
+        logger.info(
+          { notificationId: notification.id },
+          "[PingPal GitHub] Duplicate notification detected (in-memory cache). Skipping.",
+        );
+        return {
+          success: true,
+          text: `Skipped duplicate notification ${notification.id}`,
+          data: { skipped: true, reason: "duplicate" },
+        };
+      }
+
+      // Then check database as secondary check (but don't fail if DB is down)
       try {
         const existing = await runtime.getMemories({
           tableName: "pingpal_github_processed",
@@ -56,16 +74,16 @@ export const analyzeGitHubNotificationAction: Action = {
 
         const isDuplicate = existing.some((mem) => {
           const metadata = mem.metadata as Record<string, unknown>;
-          return (
-            metadata?.githubNotificationId === notification.id &&
-            metadata?.githubThreadId === notification.thread.id
-          );
+          return metadata?.githubNotificationId === notification.id;
         });
 
         if (isDuplicate) {
+          // Add to in-memory cache for future checks
+          processedNotificationIds.add(notification.id);
+          
           logger.info(
             { notificationId: notification.id },
-            "[PingPal GitHub] Duplicate notification detected. Skipping.",
+            "[PingPal GitHub] Duplicate notification detected (database). Skipping.",
           );
           return {
             success: true,
@@ -74,15 +92,11 @@ export const analyzeGitHubNotificationAction: Action = {
           };
         }
       } catch (dbError) {
-        logger.error(
+        logger.warn(
           { error: dbError, notificationId: notification.id },
-          "[PingPal GitHub] Error checking for duplicate notifications.",
+          "[PingPal GitHub] Error checking database for duplicates. Continuing with in-memory check only.",
         );
-        return {
-          success: false,
-          error:
-            dbError instanceof Error ? dbError : new Error(String(dbError)),
-        };
+        // Don't fail - continue processing if database is down
       }
 
       // Perform LLM analysis
@@ -93,8 +107,18 @@ export const analyzeGitHubNotificationAction: Action = {
         targetUsername || "",
       );
 
-      // Log processed notification
-      await logProcessedNotification(runtime, notification, analysisResult);
+      // Add to in-memory cache immediately (before DB logging to prevent duplicates)
+      processedNotificationIds.add(notification.id);
+      
+      // Maintain cache size limit
+      if (processedNotificationIds.size > MAX_CACHE_SIZE) {
+        // Remove oldest entries (in a Set, the first entries are the oldest)
+        const oldestIds = Array.from(processedNotificationIds).slice(0, processedNotificationIds.size - MAX_CACHE_SIZE + 100);
+        oldestIds.forEach(id => processedNotificationIds.delete(id));
+      }
+
+      // Log processed notification (don't fail if this fails)
+      await logProcessedNotification(runtime, notification, analysisResult, message.roomId);
 
       // Send Telegram notification if important
       if (analysisResult && analysisResult.important) {
@@ -141,7 +165,14 @@ export const analyzeGitHubNotificationAction: Action = {
       };
     } catch (error) {
       logger.error(
-        { error },
+        { 
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : String(error),
+          notificationId: (message.content as any)?.githubNotification?.id
+        },
         "[PingPal GitHub] Failed to analyze GitHub notification",
       );
       return {
@@ -220,7 +251,16 @@ Respond ONLY with a JSON object matching this schema:
     );
   } catch (llmError) {
     logger.error(
-      { error: llmError, agentId: runtime.agentId },
+      { 
+        error: llmError instanceof Error ? {
+          name: llmError.name,
+          message: llmError.message,
+          stack: llmError.stack
+        } : String(llmError),
+        agentId: runtime.agentId,
+        modelType: ModelType.OBJECT_SMALL,
+        promptLength: prompt.length
+      },
       "[PingPal GitHub] LLM analysis failed.",
     );
     return { important: false, reason: "LLM analysis failed." };
@@ -231,12 +271,13 @@ async function logProcessedNotification(
   runtime: IAgentRuntime,
   notification: GitHubNotification,
   analysisResult: { important: boolean; reason: string } | null,
+  roomId: `${string}-${string}-${string}-${string}-${string}` = "00000000-0000-0000-0000-000000000000", // Default internal room ID
 ): Promise<void> {
   const notifiedStatus = analysisResult?.important || false;
 
   const processedMemory: Omit<Memory, "id" | "updatedAt"> = {
     entityId: runtime.agentId,
-    roomId: crypto.randomUUID(),
+    roomId: roomId, // Use passed roomId (defaults to internal room ID)
     agentId: runtime.agentId,
     createdAt: Date.now(),
     content: {
@@ -245,12 +286,14 @@ async function logProcessedNotification(
     metadata: {
       type: "pingpal_github_processed",
       githubNotificationId: notification.id,
-      githubThreadId: notification.thread.id,
+      githubUrl: notification.url,
       notifiedViaTelegram: notifiedStatus,
       analysisResult: analysisResult?.reason,
       sourceContext: {
         repository: notification.repository.full_name,
         notificationType: notification.reason,
+        subjectTitle: notification.subject.title,
+        subjectType: notification.subject.type,
       },
     } as MemoryMetadata & Record<string, unknown>,
   };
@@ -269,13 +312,14 @@ async function logProcessedNotification(
       "[PingPal GitHub] Logged processed GitHub notification successfully.",
     );
   } catch (dbError) {
-    logger.error(
+    logger.warn(
       {
         error: dbError,
         notificationId: notification.id,
         agentId: runtime.agentId,
       },
-      "[PingPal GitHub] Failed to log processed GitHub notification.",
+      "[PingPal GitHub] Failed to log processed GitHub notification. Continuing anyway (using in-memory deduplication).",
     );
+    // Don't throw error - we have in-memory deduplication as fallback
   }
 }

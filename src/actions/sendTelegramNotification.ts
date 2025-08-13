@@ -153,6 +153,18 @@ function formatGitHubNotification(
   const subject = escapeMarkdownV2(notification.subject.title);
   const notificationType = escapeMarkdownV2(notification.reason);
   const escapedReason = escapeMarkdownV2(reason);
+  
+  // Format the notification date/time
+  const notificationDate = new Date(notification.updated_at);
+  const formattedDate = notificationDate.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+  const escapedDate = escapeMarkdownV2(formattedDate);
 
   // Create appropriate link based on subject type and URL
   let itemLink = notification.repository.html_url;
@@ -169,6 +181,7 @@ function formatGitHubNotification(
 *Repository:* ${repoName}
 *Type:* ${notificationType}
 *Subject:* ${subject}
+*Date:* ${escapedDate}
 
 *Reason:* ${escapedReason}
 

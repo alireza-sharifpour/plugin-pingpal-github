@@ -95,7 +95,7 @@ export const pollGitHubNotificationsAction: Action = {
         const analysisMemory: Memory = {
           id: crypto.randomUUID(),
           entityId: runtime.agentId,
-          roomId: message.roomId,
+          roomId: message.roomId, // Pass through roomId (could be null for internal operations)
           agentId: runtime.agentId,
           content: {
             text: "Analyze GitHub notification",
@@ -116,7 +116,14 @@ export const pollGitHubNotificationsAction: Action = {
             }
           } catch (error) {
             logger.error(
-              { error, notificationId: notification.id },
+              { 
+                error: error instanceof Error ? {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack
+                } : String(error),
+                notificationId: notification.id 
+              },
               "[PingPal GitHub] Failed to analyze notification",
             );
           }
