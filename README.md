@@ -1,214 +1,214 @@
-# Plugin Quick Starter
+# PingPal GitHub-to-Telegram Monitor Plugin (plugin-pingpal-github)
 
-A minimal backend-only plugin template for ElizaOS. This template provides a clean starting point for creating simple plugins without frontend complexity.
+This ElizaOS plugin, `plugin-pingpal-github`, monitors GitHub notifications for a specified user account, analyzes their importance using a Language Model (LLM), and sends notifications for critical items to a designated Telegram chat. It is designed to help developers manage GitHub notification overload by filtering out noise and ensuring timely awareness of important pull requests, issues, mentions, and review requests.
 
-## Overview
-
-This quick-starter template is ideal for:
-
-- Backend-only plugins
-- Simple API integrations
-- Services and providers
-- Actions without UI components
-- Lightweight extensions
-
-## Structure
-
-```
-plugin-pingpal-github/
-├── src/
-│   ├── __tests__/          # Unit tests
-│   │   ├── plugin.test.ts
-│   │   └── test-utils.ts
-│   ├── plugin.ts           # Main plugin implementation
-│   ├── tests.ts            # Plugin test suite
-│   └── index.ts            # Plugin export
-├── scripts/
-│   └── install-test-deps.js # Test dependency installer
-├── tsup.config.ts          # Build configuration
-├── tsconfig.json           # TypeScript config
-├── package.json            # Minimal dependencies
-└── README.md               # This file
-```
-
-## Getting Started
-
-1. **Create your plugin:**
-
-   ```bash
-   elizaos create my-plugin
-   # Select: Plugin
-   # Select: Quick Plugin (Backend Only)
-   ```
-
-2. **Navigate to your plugin:**
-
-   ```bash
-   cd my-plugin
-   ```
-
-3. **Install dependencies:**
-
-   ```bash
-   bun install
-   ```
-
-4. **Start development:**
-   ```bash
-   bun run dev
-   ```
+This plugin uses the GitHub API for direct notification polling and integrates with `@elizaos/plugin-telegram` for sending notifications.
 
 ## Key Features
 
-### Minimal Dependencies
+- **Direct GitHub API Monitoring:** Connects to GitHub via personal access token to poll for notifications at regular intervals.
+- **LLM-Powered Importance Analysis:** Utilizes an LLM via `runtime.useModel` to analyze the context and content of GitHub notifications to determine their importance and generate a concise summary.
+- **Telegram Notifications:** Sends private Telegram messages for notifications deemed important, including the repository, subject, reason for importance, and a direct link to the GitHub item.
+- **Deduplication:** Prevents duplicate notifications for the same GitHub notification ID by tracking processed notifications in the database.
+- **Configurable Filtering:** Focuses on relevant notification types including mentions, review requests, assignments, and author notifications.
 
-- Only essential packages (`@elizaos/core`, `zod`)
-- No frontend frameworks or build tools
-- Fast installation and builds
+## How It Works
 
-### Simple Testing
+1.  **Initialization (`init` in `src/plugin.ts`):**
 
-- Unit tests only with Bun test runner
-- No E2E or component testing overhead
-- Quick test execution
+    - The plugin validates required environment variables for GitHub access token, target username, and Telegram user ID.
+    - It creates an agent-specific internal room for logging if it doesn't exist.
+    - Sets up a 30-second polling interval to check for new GitHub notifications.
 
-### Backend Focus
+2.  **GitHub Notification Polling (`POLL_GITHUB_NOTIFICATIONS` action in `src/actions/pollGitHubNotifications.ts`):**
 
-- API routes for server-side functionality
-- Services for state management
-- Actions for agent capabilities
-- Providers for contextual data
+    - Every 30 seconds, the plugin fetches the last 20 notifications (both read and unread) from GitHub API.
+    - Filters for relevant notification types: `mention`, `review_requested`, `assign`, and `author`.
+    - For each relevant notification, triggers the analysis action.
 
-## Plugin Components
+3.  **Notification Analysis (`ANALYZE_GITHUB_NOTIFICATION` action in `src/actions/analyzeGitHubNotification.ts`):**
 
-### Actions
+    - Before analysis, checks if the notification ID has already been processed using database memories (table: `pingpal_github_processed`) to prevent duplicates.
+    - If it's a new notification, constructs a prompt with the notification details and sends it to an LLM using `runtime.useModel`.
+    - The LLM responds with a JSON object indicating if the notification is `important` and provides a `reason` for the classification.
+    - The analysis result and original notification details are logged as an ElizaOS memory for persistence.
 
-Define agent capabilities:
+4.  **Telegram Notification (`SEND_TELEGRAM_NOTIFICATION` action in `src/actions/sendTelegramNotification.ts`):**
+    - If the analysis determines the notification is important, triggers the Telegram notification action.
+    - Formats a rich message containing the repository name, notification type, subject, timestamp, and importance reason.
+    - Uses the `@elizaos/plugin-telegram` service to send this message as a private notification to the configured `targetTelegramUserId`.
+    - Includes a direct link to the relevant GitHub issue or pull request for quick access.
 
-```typescript
-const myAction: Action = {
-  name: 'MY_ACTION',
-  description: 'Description of what this action does',
-  validate: async (runtime, message, state) => {
-    // Validation logic
-    return true;
-  },
-  handler: async (runtime, message, state, options, callback) => {
-    // Action implementation
-    return { success: true, data: {} };
-  },
-};
+## Setup and Configuration
+
+To use this plugin, you need to configure your ElizaOS agent and provide necessary credentials and settings.
+
+### 1. Environment Variables
+
+Create a `.env` file in your ElizaOS project root with the following variables:
+
+```env
+# GitHub API Details (for monitoring notifications)
+GITHUB_ACCESS_TOKEN="ghp_your_github_personal_access_token"
+PINGPAL_TARGET_GITHUB_USERNAME="your_github_username"
+
+# Telegram Bot Details (for sending notifications)
+# This bot will send notifications TO the targetTelegramUserId.
+# The target user MUST /start a chat with this bot once.
+TELEGRAM_BOT_TOKEN="your_telegram_bot_token"
+PINGPAL_TARGET_TELEGRAM_USERID="your_numerical_telegram_user_id"
+
+# LLM Provider API Key (e.g., OpenAI)
+OPENAI_API_KEY="your_llm_api_key" # Or other relevant key for your LLM provider
 ```
 
-### Services
+**Important Notes:**
 
-Manage plugin state:
+- **GitHub Personal Access Token:** Create a personal access token on GitHub with `notifications` and `repo` scopes. Go to Settings → Developer settings → Personal access tokens → Generate new token.
+- **Target Telegram User ID:** This is your numerical Telegram User ID. You can get it by messaging a bot like `@userinfobot` on Telegram.
+- **Telegram Bot:** The `TELEGRAM_BOT_TOKEN` is for a bot you create (via BotFather on Telegram). The user specified by `PINGPAL_TARGET_TELEGRAM_USERID` must initiate a conversation with this bot (e.g., by sending `/start`) before it can send them private messages.
 
-```typescript
-export class MyService extends Service {
-  static serviceType = 'my-service';
+### 2. ElizaOS Agent Character Configuration
 
-  async start() {
-    // Initialize service
-  }
-
-  async stop() {
-    // Cleanup
-  }
-}
-```
-
-### Providers
-
-Supply contextual information:
+In your agent's character definition file (e.g., `src/index.ts` or similar), configure the agent to use this plugin and provide necessary settings:
 
 ```typescript
-const myProvider: Provider = {
-  name: 'MY_PROVIDER',
-  description: 'Provides contextual data',
-  get: async (runtime, message, state) => {
-    return {
-      text: 'Provider data',
-      values: {},
-      data: {},
-    };
-  },
-};
-```
+import type {
+  Character,
+  IAgentRuntime,
+  Project,
+  ProjectAgent,
+} from "@elizaos/core";
+import pingPalGitHubPlugin from "plugin-pingpal-github"; // Assuming the plugin is correctly referenced
 
-### API Routes
+export const character: Character = {
+  name: "GitHub Monitor Agent",
+  plugins: [
+    "@elizaos/plugin-sql", // Required for memory (deduplication)
+    "@elizaos/plugin-telegram", // Required for sending notifications
+    "plugin-pingpal-github", // This plugin
+  ],
+  settings: {
+    // Secrets can reference environment variables
+    // These ensure ElizaOS securely manages them and makes them available via runtime.getSetting()
+    GITHUB_ACCESS_TOKEN: process.env.GITHUB_ACCESS_TOKEN,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY, // Or your LLM provider key
 
-Backend endpoints:
-
-```typescript
-routes: [
-  {
-    name: 'api-endpoint',
-    path: '/api/endpoint',
-    type: 'GET',
-    handler: async (req, res) => {
-      res.json({ data: 'response' });
+    // PingPal GitHub Plugin specific settings
+    pingpal: {
+      targetGitHubUsername: process.env.PINGPAL_TARGET_GITHUB_USERNAME,
+      targetTelegramUserId: process.env.PINGPAL_TARGET_TELEGRAM_USERID,
     },
   },
-];
+  // Other character properties (bio, style, etc.)
+};
+
+export const projectAgent: ProjectAgent = {
+  character,
+  init: async (runtime: IAgentRuntime) => {
+    console.log("Initializing GitHub Monitor Agent:", character.name);
+    // Agent-specific initialization if any
+  },
+  plugins: [pingPalGitHubPlugin], // Ensure the plugin instance is added here
+  tests: [],
+};
+
+const project: Project = {
+  agents: [projectAgent],
+};
+
+export default project;
 ```
 
-## Development Commands
+## Running the Plugin
+
+1.  **Install Dependencies:** Ensure all dependencies for your ElizaOS project and this plugin are installed (`npm install` or `bun install`).
+2.  **Configure:** Set up your `.env` file and character configuration as described above.
+3.  **Start ElizaOS:** Run your ElizaOS agent that includes this plugin.
+    ```bash
+    npx elizaos start
+    # or if you have it as a script in package.json
+    # npm run start / bun run start
+    ```
+4.  **Test:** Create activity on your GitHub account (e.g., mention yourself in an issue, request a review, assign an issue).
+    - Check the agent's console logs for GitHub API polling status, notification detection, and LLM analysis logs.
+    - If a notification is deemed important by the LLM, you should receive a notification on the configured Telegram account.
+
+## Development
 
 ```bash
-# Start in development mode with hot reload
+# Start development with hot-reloading
 bun run dev
-
-# Start in production mode
-bun run start
 
 # Build the plugin
 bun run build
 
-# Run tests
+# Test the plugin
 bun test
 
 # Format code
 bun run format
 ```
 
-## Testing
+## Notification Types Monitored
 
-Write unit tests in `src/__tests__/`:
+The plugin specifically monitors the following GitHub notification types:
 
-```typescript
-import { describe, it, expect } from 'bun:test';
+- **mention**: You were directly mentioned in an issue or pull request
+- **review_requested**: Your review was requested on a pull request
+- **assign**: You were assigned to an issue or pull request
+- **author**: Activity on issues or pull requests you authored
 
-describe('My Plugin', () => {
-  it('should work correctly', () => {
-    expect(true).toBe(true);
-  });
-});
+## Agent Configuration (in package.json - for plugin registry)
+
+The `agentConfig` section in this plugin's `package.json` defines the parameters your plugin requires for users to discover it through the registry. This is less about runtime and more about discovery and informing users about necessary settings.
+
+Example configuration:
+
+```json
+"agentConfig": {
+  "pluginType": "elizaos:plugin:1.0.0",
+  "pluginParameters": {
+    "pingpal.targetGitHubUsername": {
+      "type": "string",
+      "description": "The GitHub username whose notifications should be monitored."
+    },
+    "pingpal.targetTelegramUserId": {
+      "type": "string",
+      "description": "The numerical Telegram User ID to send notifications to."
+    }
+    // Note: GitHub access token, Telegram Bot Token, and LLM API keys are typically configured
+    // as secrets at the agent level, not directly as pluginParameters here,
+    // as they are sensitive and often shared across an agent's plugins.
+    // The plugin relies on these being available via process.env.
+  }
+}
 ```
 
-## Publishing
+## How Importance Analysis Works
 
-1. Update `package.json` with your plugin details
-2. Build your plugin: `bun run build`
-3. Publish: `elizaos publish`
+The LLM analyzes each GitHub notification based on:
 
-## When to Use Quick Starter
+- Direct mentions requiring response
+- Pull request review requests needing timely action
+- Issue assignments requiring work
+- Critical discussions or blockers
+- Deadlines or time-sensitive matters
+- Tasks requiring immediate response
 
-Use this template when you need:
+The analysis considers the notification type, repository, subject title, and update timestamp to determine if immediate attention is required.
 
-- ✅ Backend-only functionality
-- ✅ Simple API integrations
-- ✅ Lightweight plugins
-- ✅ Fast development cycles
-- ✅ Minimal dependencies
+## Deduplication Strategy
 
-Consider the full plugin-pingpal-github if you need:
+The plugin uses a database-first deduplication approach:
 
-- ❌ React frontend components
-- ❌ Complex UI interactions
-- ❌ E2E testing with Cypress
-- ❌ Frontend build pipeline
+1. **Primary Check:** Database memories in the `pingpal_github_processed` table
+2. **Secondary Cache:** In-memory set for performance optimization (limited to 1000 entries)
+3. **Persistent Storage:** All processed notifications are logged to ensure deduplication survives restarts
+
+This ensures that you won't receive duplicate Telegram notifications for the same GitHub notification, even if the agent restarts or the notification appears multiple times in the API response.
 
 ## License
 
-This template is part of the ElizaOS project.
+This plugin is part of the ElizaOS project.
