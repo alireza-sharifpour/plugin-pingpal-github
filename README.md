@@ -39,6 +39,110 @@ This plugin uses the GitHub API for direct notification polling and integrates w
     - Uses the `@elizaos/plugin-telegram` service to send this message as a private notification to the configured `targetTelegramUserId`.
     - Includes a direct link to the relevant GitHub issue or pull request for quick access.
 
+## Installation
+
+You can install this plugin in your ElizaOS project using several methods:
+
+### Method 1: Install from npm (if published)
+
+```bash
+# Using npm
+npm install plugin-pingpal-github
+
+# Using yarn
+yarn add plugin-pingpal-github
+
+# Using pnpm
+pnpm install plugin-pingpal-github
+
+# Using bun
+bun add plugin-pingpal-github
+```
+
+### Method 2: Install from GitHub
+
+Add the plugin directly from GitHub to your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "plugin-pingpal-github": "github:your-username/plugin-pingpal-github"
+  }
+}
+```
+
+Then run your package manager's install command:
+
+```bash
+npm install
+# or
+bun install
+```
+
+### Method 3: Local Development
+
+For local development or testing, you can link the plugin:
+
+1. Clone the plugin repository:
+```bash
+git clone https://github.com/your-username/plugin-pingpal-github.git
+cd plugin-pingpal-github
+bun install
+bun run build
+```
+
+2. Link the plugin:
+```bash
+npm link
+# or
+bun link
+```
+
+3. In your ElizaOS project:
+```bash
+npm link plugin-pingpal-github
+# or
+bun link plugin-pingpal-github
+```
+
+### Adding the Plugin to Your Agent
+
+After installation, add the plugin to your character configuration:
+
+```typescript
+import pingPalGitHubPlugin from "plugin-pingpal-github";
+
+export const character: Character = {
+  name: "GitHub Monitor Agent",
+  plugins: [
+    "@elizaos/plugin-sql",       // Required for memory/deduplication
+    "@elizaos/plugin-telegram",   // Required for sending notifications
+    "plugin-pingpal-github",      // This plugin (as string reference)
+  ],
+  // ... rest of configuration
+};
+
+// Or if importing the plugin instance directly:
+export const projectAgent: ProjectAgent = {
+  character,
+  plugins: [pingPalGitHubPlugin], // Plugin instance
+  // ... rest of configuration
+};
+```
+
+### Required Dependencies
+
+This plugin requires the following ElizaOS plugins to be installed and configured:
+
+- `@elizaos/plugin-sql` - For database storage and deduplication
+- `@elizaos/plugin-telegram` - For sending Telegram notifications
+
+Make sure these are installed in your project:
+
+```bash
+npm install @elizaos/plugin-sql @elizaos/plugin-telegram
+```
+
 ## Setup and Configuration
 
 To use this plugin, you need to configure your ElizaOS agent and provide necessary credentials and settings.
