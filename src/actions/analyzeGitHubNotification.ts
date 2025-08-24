@@ -7,13 +7,25 @@ import type {
   ActionResult,
   State,
   HandlerCallback,
+  UUID,
 } from "@elizaos/core";
-import { logger, ModelType, parseJSONObjectFromText } from "@elizaos/core";
+import { logger, ModelType, parseJSONObjectFromText, stringToUuid } from "@elizaos/core";
 import { GitHubNotification } from "../services/githubService";
 
-// In-memory cache for processed notifications as fallback
+/**
+ * Generates a consistent internal room ID for the agent following the email plugin pattern
+ */
+const getInternalRoomIdForAgent = (agentId: UUID): UUID => {
+  // Take first 13 chars of agentId to create a unique suffix (following email plugin pattern)
+  const agentSpecificRoomSuffix = agentId.slice(0, 13);
+
+  // Use stringToUuid with a clean, short seed string for proper UUID generation
+  return stringToUuid(`pingpal-github-internal-room-${agentSpecificRoomSuffix}`);
+};
+
+// In-memory cache for performance optimization only (optional enhancement)
 const processedNotificationIds = new Set<string>();
-const MAX_CACHE_SIZE = 1000; // Keep last 1000 processed notification IDs in memory
+const MAX_CACHE_SIZE = 1000; // Keep last 1000 processed notification IDs in memory for performance
 
 export const analyzeGitHubNotificationAction: Action = {
   name: "ANALYZE_GITHUB_NOTIFICATION",
@@ -51,40 +63,29 @@ export const analyzeGitHubNotificationAction: Action = {
         "[PingPal GitHub] Analyzing GitHub notification...",
       );
 
-      // Check for duplicates - First check in-memory cache for fast lookup
-      if (processedNotificationIds.has(notification.id)) {
-        logger.info(
-          { notificationId: notification.id },
-          "[PingPal GitHub] Duplicate notification detected (in-memory cache). Skipping.",
-        );
-        return {
-          success: true,
-          text: `Skipped duplicate notification ${notification.id}`,
-          data: { skipped: true, reason: "duplicate" },
-        };
-      }
-
-      // Then check database as secondary check (but don't fail if DB is down)
+      // DATABASE-FIRST DEDUPLICATION - Following email plugin pattern
+      // Check database as PRIMARY source of truth for persistent deduplication
       try {
-        const existing = await runtime.getMemories({
+        const processedMemories = await runtime.getMemories({
           tableName: "pingpal_github_processed",
           agentId: runtime.agentId,
-          count: 100, // Check last 100 processed notifications
+          count: 200, // Check last 200 processed notifications
         });
 
-        const isDuplicate = existing.some((mem) => {
-          const metadata = mem.metadata as Record<string, unknown>;
+        const isDuplicate = processedMemories.some((memory) => {
+          const metadata = memory.metadata as Record<string, unknown>;
           return metadata?.githubNotificationId === notification.id;
         });
 
         if (isDuplicate) {
-          // Add to in-memory cache for future checks
-          processedNotificationIds.add(notification.id);
-          
           logger.info(
             { notificationId: notification.id },
             "[PingPal GitHub] Duplicate notification detected (database). Skipping.",
           );
+
+          // Add to in-memory cache for performance optimization
+          processedNotificationIds.add(notification.id);
+
           return {
             success: true,
             text: `Skipped duplicate notification ${notification.id}`,
@@ -94,9 +95,21 @@ export const analyzeGitHubNotificationAction: Action = {
       } catch (dbError) {
         logger.warn(
           { error: dbError, notificationId: notification.id },
-          "[PingPal GitHub] Error checking database for duplicates. Continuing with in-memory check only.",
+          "[PingPal GitHub] Error checking database for duplicates. Falling back to in-memory check only.",
         );
-        // Don't fail - continue processing if database is down
+
+        // Fallback to in-memory check if database fails
+        if (processedNotificationIds.has(notification.id)) {
+          logger.info(
+            { notificationId: notification.id },
+            "[PingPal GitHub] Duplicate notification detected (in-memory fallback). Skipping.",
+          );
+          return {
+            success: true,
+            text: `Skipped duplicate notification ${notification.id}`,
+            data: { skipped: true, reason: "duplicate" },
+          };
+        }
       }
 
       // Perform LLM analysis
@@ -107,18 +120,19 @@ export const analyzeGitHubNotificationAction: Action = {
         targetUsername || "",
       );
 
-      // Add to in-memory cache immediately (before DB logging to prevent duplicates)
+      // Log processed notification to database FIRST (primary persistence)
+      // This must succeed for proper deduplication across restarts
+      await logProcessedNotification(runtime, notification, analysisResult, message.roomId);
+
+      // Add to in-memory cache for performance optimization (secondary)
       processedNotificationIds.add(notification.id);
-      
+
       // Maintain cache size limit
       if (processedNotificationIds.size > MAX_CACHE_SIZE) {
         // Remove oldest entries (in a Set, the first entries are the oldest)
         const oldestIds = Array.from(processedNotificationIds).slice(0, processedNotificationIds.size - MAX_CACHE_SIZE + 100);
         oldestIds.forEach(id => processedNotificationIds.delete(id));
       }
-
-      // Log processed notification (don't fail if this fails)
-      await logProcessedNotification(runtime, notification, analysisResult, message.roomId);
 
       // Send Telegram notification if important
       if (analysisResult && analysisResult.important) {
@@ -165,7 +179,7 @@ export const analyzeGitHubNotificationAction: Action = {
       };
     } catch (error) {
       logger.error(
-        { 
+        {
           error: error instanceof Error ? {
             name: error.name,
             message: error.message,
@@ -251,7 +265,7 @@ Respond ONLY with a JSON object matching this schema:
     );
   } catch (llmError) {
     logger.error(
-      { 
+      {
         error: llmError instanceof Error ? {
           name: llmError.name,
           message: llmError.message,
@@ -271,13 +285,17 @@ async function logProcessedNotification(
   runtime: IAgentRuntime,
   notification: GitHubNotification,
   analysisResult: { important: boolean; reason: string } | null,
-  roomId: `${string}-${string}-${string}-${string}-${string}` = "00000000-0000-0000-0000-000000000000", // Default internal room ID
+  providedRoomId?: UUID, // Optional room ID from caller
 ): Promise<void> {
   const notifiedStatus = analysisResult?.important || false;
 
+  // Use agent-specific internal room ID (like email plugin pattern)
+  // This ensures proper FK relationships and avoids constraint errors
+  const internalRoomId = getInternalRoomIdForAgent(runtime.agentId);
+
   const processedMemory: Omit<Memory, "id" | "updatedAt"> = {
     entityId: runtime.agentId,
-    roomId: roomId, // Use passed roomId (defaults to internal room ID)
+    roomId: internalRoomId, // Always use internal room ID for consistency
     agentId: runtime.agentId,
     createdAt: Date.now(),
     content: {
@@ -308,18 +326,21 @@ async function logProcessedNotification(
         notificationId: notification.id,
         notified: notifiedStatus,
         agentId: runtime.agentId,
+        roomId: internalRoomId,
       },
-      "[PingPal GitHub] Logged processed GitHub notification successfully.",
+      "[PingPal GitHub] Logged processed GitHub notification successfully to database.",
     );
   } catch (dbError) {
-    logger.warn(
+    logger.error(
       {
         error: dbError,
         notificationId: notification.id,
         agentId: runtime.agentId,
+        roomId: internalRoomId,
       },
-      "[PingPal GitHub] Failed to log processed GitHub notification. Continuing anyway (using in-memory deduplication).",
+      "[PingPal GitHub] CRITICAL: Failed to log processed GitHub notification to database. This will cause duplicates on restart!",
     );
-    // Don't throw error - we have in-memory deduplication as fallback
+    // This is critical - we need database persistence for restart-resistant deduplication
+    throw new Error(`Database logging failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
   }
 }

@@ -14,11 +14,25 @@ import {
   type MessagePayload,
   type WorldPayload,
   EventType,
+  type UUID,
+  stringToUuid,
+  ChannelType,
 } from "@elizaos/core";
 import { z } from "zod";
 import { pollGitHubNotificationsAction } from "./actions/pollGitHubNotifications";
 import { analyzeGitHubNotificationAction } from "./actions/analyzeGitHubNotification";
 import { sendTelegramNotificationAction } from "./actions/sendTelegramNotification";
+
+/**
+ * Generates a consistent internal room ID for the agent following the email plugin pattern
+ */
+const getInternalRoomIdForAgent = (agentId: UUID): UUID => {
+  // Take first 13 chars of agentId to create a unique suffix (following email plugin pattern)
+  const agentSpecificRoomSuffix = agentId.slice(0, 13);
+
+  // Use stringToUuid with a clean, short seed string for proper UUID generation
+  return stringToUuid(`pingpal-github-internal-room-${agentSpecificRoomSuffix}`);
+};
 
 /**
  * Defines the configuration schema for a plugin, including the validation rules for the plugin name.
@@ -233,17 +247,36 @@ export const pingPalGitHubPlugin: Plugin = {
       throw error;
     }
 
+    // Generate agent-specific internal room ID following email plugin pattern
+    const internalRoomId = getInternalRoomIdForAgent(runtime.agentId);
+
+    console.log(
+      `[PingPal GitHub] Using internal room ID: ${internalRoomId}`,
+    );
+
+    // Ensure the internal room exists in the database
+    await runtime.ensureRoomExists({
+      id: internalRoomId,
+      name: `PingPal GitHub Internal Logs - Agent ${runtime.agentId.slice(0, 8)}`,
+      source: "internal_pingpal_github_plugin",
+      type: ChannelType.SELF,
+      worldId: runtime.agentId, // Use agentId as worldId for internal rooms
+    });
+
+    console.log(
+      `[PingPal GitHub] Ensured internal room exists: ${internalRoomId}`,
+    );
+
     // Set up periodic polling (every 30 seconds)
     const pollInterval = 30 * 1000; // 30 seconds
     setInterval(async () => {
       try {
         // Create a memory object for internal polling trigger
-        // Use a consistent internal roomId to avoid FK constraints
-        const INTERNAL_ROOM_ID = "00000000-0000-0000-0000-000000000000"; // Fixed UUID for internal operations
+        // Use agent-specific internal roomId to avoid FK constraints
         const pollingMemory: Memory = {
           id: crypto.randomUUID(),
           entityId: runtime.agentId,
-          roomId: INTERNAL_ROOM_ID,
+          roomId: internalRoomId, // Use agent-specific room ID
           agentId: runtime.agentId,
           content: { text: "Polling GitHub notifications", source: "internal" },
           createdAt: Date.now(),
@@ -314,7 +347,7 @@ export const pingPalGitHubPlugin: Plugin = {
     sendTelegramNotificationAction,
   ],
   providers: [helloWorldProvider],
-  // dependencies: ['@elizaos/plugin-knowledge'], <--- plugin dependencies go here (if requires another plugin)
+  dependencies: ['@elizaos/plugin-telegram'], // Required for sending Telegram notifications
 };
 
 export default pingPalGitHubPlugin;
