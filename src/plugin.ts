@@ -175,6 +175,57 @@ export class StarterService extends Service {
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info("Starting starter service");
+    
+    // Generate agent-specific internal room ID following email plugin pattern
+    const internalRoomId = getInternalRoomIdForAgent(runtime.agentId);
+
+    console.log(
+      `[PingPal GitHub] Using internal room ID: ${internalRoomId}`,
+    );
+
+    // Ensure the internal room exists in the database (moved from init to start)
+    await runtime.ensureRoomExists({
+      id: internalRoomId,
+      name: `PingPal GitHub Internal Logs - Agent ${runtime.agentId.slice(0, 8)}`,
+      source: "internal_pingpal_github_plugin",
+      type: ChannelType.SELF,
+      worldId: runtime.agentId, // Use agentId as worldId for internal rooms
+    });
+
+    console.log(
+      `[PingPal GitHub] Ensured internal room exists: ${internalRoomId}`,
+    );
+
+    // Set up periodic polling (every 30 seconds)
+    const pollInterval = 30 * 1000; // 30 seconds
+    setInterval(async () => {
+      try {
+        // Create a memory object for internal polling trigger
+        // Use agent-specific internal roomId to avoid FK constraints
+        const pollingMemory: Memory = {
+          id: crypto.randomUUID(),
+          entityId: runtime.agentId,
+          roomId: internalRoomId, // Use agent-specific room ID
+          agentId: runtime.agentId,
+          content: { text: "Polling GitHub notifications", source: "internal" },
+          createdAt: Date.now(),
+        };
+
+        // Execute the polling action directly
+        if (
+          await pollGitHubNotificationsAction.validate(runtime, pollingMemory)
+        ) {
+          await pollGitHubNotificationsAction.handler(runtime, pollingMemory);
+        }
+      } catch (error) {
+        logger.error("[PingPal GitHub] Error during periodic polling:", error);
+      }
+    }, pollInterval);
+
+    console.log(
+      "[PingPal GitHub] Registered periodic GitHub notification polling (30 second intervals).",
+    );
+
     const service = new StarterService(runtime);
     return service;
   }
@@ -202,7 +253,7 @@ export const pingPalGitHubPlugin: Plugin = {
   config: {
     EXAMPLE_PLUGIN_VARIABLE: process.env.EXAMPLE_PLUGIN_VARIABLE,
   },
-  async init(config: Record<string, string>, runtime: IAgentRuntime) {
+  async init(config: Record<string, string>, _runtime: IAgentRuntime) {
     console.log("Initializing PingPal GitHub Plugin....");
 
     // Validate required configuration
@@ -247,55 +298,7 @@ export const pingPalGitHubPlugin: Plugin = {
       throw error;
     }
 
-    // Generate agent-specific internal room ID following email plugin pattern
-    const internalRoomId = getInternalRoomIdForAgent(runtime.agentId);
-
-    console.log(
-      `[PingPal GitHub] Using internal room ID: ${internalRoomId}`,
-    );
-
-    // Ensure the internal room exists in the database
-    await runtime.ensureRoomExists({
-      id: internalRoomId,
-      name: `PingPal GitHub Internal Logs - Agent ${runtime.agentId.slice(0, 8)}`,
-      source: "internal_pingpal_github_plugin",
-      type: ChannelType.SELF,
-      worldId: runtime.agentId, // Use agentId as worldId for internal rooms
-    });
-
-    console.log(
-      `[PingPal GitHub] Ensured internal room exists: ${internalRoomId}`,
-    );
-
-    // Set up periodic polling (every 30 seconds)
-    const pollInterval = 30 * 1000; // 30 seconds
-    setInterval(async () => {
-      try {
-        // Create a memory object for internal polling trigger
-        // Use agent-specific internal roomId to avoid FK constraints
-        const pollingMemory: Memory = {
-          id: crypto.randomUUID(),
-          entityId: runtime.agentId,
-          roomId: internalRoomId, // Use agent-specific room ID
-          agentId: runtime.agentId,
-          content: { text: "Polling GitHub notifications", source: "internal" },
-          createdAt: Date.now(),
-        };
-
-        // Execute the polling action directly
-        if (
-          await pollGitHubNotificationsAction.validate(runtime, pollingMemory)
-        ) {
-          await pollGitHubNotificationsAction.handler(runtime, pollingMemory);
-        }
-      } catch (error) {
-        logger.error("[PingPal GitHub] Error during periodic polling:", error);
-      }
-    }, pollInterval);
-
-    console.log(
-      "[PingPal GitHub] Registered periodic GitHub notification polling (30 second intervals).",
-    );
+    // Room creation and polling setup moved to StarterService.start() to avoid timing issues
   },
   models: {
     // Remove the placeholder models to let ElizaOS use its default model implementations
