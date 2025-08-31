@@ -9,7 +9,12 @@ import type {
   HandlerCallback,
   UUID,
 } from "@elizaos/core";
-import { logger, ModelType, parseJSONObjectFromText, stringToUuid } from "@elizaos/core";
+import {
+  logger,
+  ModelType,
+  parseJSONObjectFromText,
+  stringToUuid,
+} from "@elizaos/core";
 import { GitHubNotification } from "../services/githubService";
 
 /**
@@ -20,7 +25,9 @@ const getInternalRoomIdForAgent = (agentId: UUID): UUID => {
   const agentSpecificRoomSuffix = agentId.slice(0, 13);
 
   // Use stringToUuid with a clean, short seed string for proper UUID generation
-  return stringToUuid(`pingpal-github-internal-room-${agentSpecificRoomSuffix}`);
+  return stringToUuid(
+    `pingpal-github-internal-room-${agentSpecificRoomSuffix}`
+  );
 };
 
 // In-memory cache for performance optimization only (optional enhancement)
@@ -36,7 +43,7 @@ export const analyzeGitHubNotificationAction: Action = {
   validate: async (
     _runtime: IAgentRuntime,
     message: Memory,
-    _state?: State,
+    _state?: State
   ): Promise<boolean> => {
     return !!(message.content as any)?.githubNotification;
   },
@@ -46,7 +53,7 @@ export const analyzeGitHubNotificationAction: Action = {
     message: Memory,
     _state?: State,
     _options?: Record<string, unknown>,
-    _callback?: HandlerCallback,
+    _callback?: HandlerCallback
   ): Promise<ActionResult> => {
     try {
       const notification = (message.content as any)
@@ -60,7 +67,7 @@ export const analyzeGitHubNotificationAction: Action = {
           subject: notification.subject.title,
           type: notification.subject.type,
         },
-        "[PingPal GitHub] Analyzing GitHub notification...",
+        "[PingPal GitHub] Analyzing GitHub notification..."
       );
 
       // DATABASE-FIRST DEDUPLICATION - Following email plugin pattern
@@ -80,7 +87,7 @@ export const analyzeGitHubNotificationAction: Action = {
         if (isDuplicate) {
           logger.info(
             { notificationId: notification.id },
-            "[PingPal GitHub] Duplicate notification detected (database). Skipping.",
+            "[PingPal GitHub] Duplicate notification detected (database). Skipping."
           );
 
           // Add to in-memory cache for performance optimization
@@ -95,14 +102,14 @@ export const analyzeGitHubNotificationAction: Action = {
       } catch (dbError) {
         logger.warn(
           { error: dbError, notificationId: notification.id },
-          "[PingPal GitHub] Error checking database for duplicates. Falling back to in-memory check only.",
+          "[PingPal GitHub] Error checking database for duplicates. Falling back to in-memory check only."
         );
 
         // Fallback to in-memory check if database fails
         if (processedNotificationIds.has(notification.id)) {
           logger.info(
             { notificationId: notification.id },
-            "[PingPal GitHub] Duplicate notification detected (in-memory fallback). Skipping.",
+            "[PingPal GitHub] Duplicate notification detected (in-memory fallback). Skipping."
           );
           return {
             success: true,
@@ -117,12 +124,17 @@ export const analyzeGitHubNotificationAction: Action = {
       const analysisResult = await performImportanceAnalysis(
         runtime,
         notification,
-        targetUsername || "",
+        targetUsername || ""
       );
 
       // Log processed notification to database FIRST (primary persistence)
       // This must succeed for proper deduplication across restarts
-      await logProcessedNotification(runtime, notification, analysisResult, message.roomId);
+      await logProcessedNotification(
+        runtime,
+        notification,
+        analysisResult,
+        message.roomId
+      );
 
       // Add to in-memory cache for performance optimization (secondary)
       processedNotificationIds.add(notification.id);
@@ -130,8 +142,11 @@ export const analyzeGitHubNotificationAction: Action = {
       // Maintain cache size limit
       if (processedNotificationIds.size > MAX_CACHE_SIZE) {
         // Remove oldest entries (in a Set, the first entries are the oldest)
-        const oldestIds = Array.from(processedNotificationIds).slice(0, processedNotificationIds.size - MAX_CACHE_SIZE + 100);
-        oldestIds.forEach(id => processedNotificationIds.delete(id));
+        const oldestIds = Array.from(processedNotificationIds).slice(
+          0,
+          processedNotificationIds.size - MAX_CACHE_SIZE + 100
+        );
+        oldestIds.forEach((id) => processedNotificationIds.delete(id));
       }
 
       // Send Telegram notification if important
@@ -152,7 +167,7 @@ export const analyzeGitHubNotificationAction: Action = {
 
         // Find and execute the SEND_TELEGRAM_NOTIFICATION action
         const sendTelegramAction = runtime.actions?.find(
-          (action) => action.name === "SEND_TELEGRAM_NOTIFICATION",
+          (action) => action.name === "SEND_TELEGRAM_NOTIFICATION"
         );
 
         if (sendTelegramAction) {
@@ -161,7 +176,7 @@ export const analyzeGitHubNotificationAction: Action = {
           }
         } else {
           logger.warn(
-            "[PingPal GitHub] SEND_TELEGRAM_NOTIFICATION action not found",
+            "[PingPal GitHub] SEND_TELEGRAM_NOTIFICATION action not found"
           );
         }
       }
@@ -180,14 +195,17 @@ export const analyzeGitHubNotificationAction: Action = {
     } catch (error) {
       logger.error(
         {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : String(error),
-          notificationId: (message.content as any)?.githubNotification?.id
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
+          notificationId: (message.content as any)?.githubNotification?.id,
         },
-        "[PingPal GitHub] Failed to analyze GitHub notification",
+        "[PingPal GitHub] Failed to analyze GitHub notification"
       );
       return {
         success: false,
@@ -200,7 +218,7 @@ export const analyzeGitHubNotificationAction: Action = {
 async function performImportanceAnalysis(
   runtime: IAgentRuntime,
   notification: GitHubNotification,
-  targetUsername: string,
+  targetUsername: string
 ): Promise<{ important: boolean; reason: string } | null> {
   const prompt = `You are an assistant helping filter GitHub notifications. Analyze the following notification for '${targetUsername}'. Determine if this notification requires urgent attention or action. Consider factors like direct mentions (@username), pull request review requests, issue assignments, critical discussions, deadlines, blockers, or tasks requiring immediate response.
 
@@ -233,13 +251,33 @@ Respond ONLY with a JSON object matching this schema:
   try {
     logger.debug(
       { agentId: runtime.agentId, promptLength: prompt.length },
-      "[PingPal GitHub] Calling LLM for analysis...",
+      "[PingPal GitHub] Calling LLM for analysis..."
     );
 
-    const rawResponse = await runtime.useModel(ModelType.OBJECT_SMALL, {
-      prompt: prompt,
-      schema: outputSchema,
-    });
+    // Try OBJECT_SMALL first, fall back to TEXT_SMALL if not available
+    let rawResponse;
+    try {
+      rawResponse = await runtime.useModel(ModelType.OBJECT_SMALL, {
+        prompt: prompt,
+        schema: outputSchema,
+      });
+    } catch (objectModelError) {
+      logger.warn(
+        { error: objectModelError },
+        "[PingPal GitHub] OBJECT_SMALL model not available, falling back to TEXT_SMALL"
+      );
+
+      // Fallback to TEXT_SMALL and parse JSON manually
+      const textResponse = await runtime.useModel(ModelType.TEXT_SMALL, {
+        prompt: prompt,
+      });
+
+      // Parse JSON from text response
+      rawResponse = parseJSONObjectFromText(textResponse as string);
+      if (!rawResponse) {
+        throw new Error("Failed to parse JSON from text model response");
+      }
+    }
 
     if (
       typeof rawResponse === "object" &&
@@ -261,21 +299,24 @@ Respond ONLY with a JSON object matching this schema:
     }
 
     throw new Error(
-      `Invalid LLM response format: ${JSON.stringify(rawResponse)}`,
+      `Invalid LLM response format: ${JSON.stringify(rawResponse)}`
     );
   } catch (llmError) {
     logger.error(
       {
-        error: llmError instanceof Error ? {
-          name: llmError.name,
-          message: llmError.message,
-          stack: llmError.stack
-        } : String(llmError),
+        error:
+          llmError instanceof Error
+            ? {
+                name: llmError.name,
+                message: llmError.message,
+                stack: llmError.stack,
+              }
+            : String(llmError),
         agentId: runtime.agentId,
         modelType: ModelType.OBJECT_SMALL,
-        promptLength: prompt.length
+        promptLength: prompt.length,
       },
-      "[PingPal GitHub] LLM analysis failed.",
+      "[PingPal GitHub] LLM analysis failed."
     );
     return { important: false, reason: "LLM analysis failed." };
   }
@@ -285,7 +326,7 @@ async function logProcessedNotification(
   runtime: IAgentRuntime,
   notification: GitHubNotification,
   analysisResult: { important: boolean; reason: string } | null,
-  providedRoomId?: UUID, // Optional room ID from caller
+  _providedRoomId?: UUID // Optional room ID from caller
 ): Promise<void> {
   const notifiedStatus = analysisResult?.important || false;
 
@@ -319,7 +360,7 @@ async function logProcessedNotification(
   try {
     await runtime.createMemory(
       processedMemory as Memory,
-      "pingpal_github_processed",
+      "pingpal_github_processed"
     );
     logger.info(
       {
@@ -328,7 +369,7 @@ async function logProcessedNotification(
         agentId: runtime.agentId,
         roomId: internalRoomId,
       },
-      "[PingPal GitHub] Logged processed GitHub notification successfully to database.",
+      "[PingPal GitHub] Logged processed GitHub notification successfully to database."
     );
   } catch (dbError) {
     logger.error(
@@ -338,9 +379,11 @@ async function logProcessedNotification(
         agentId: runtime.agentId,
         roomId: internalRoomId,
       },
-      "[PingPal GitHub] CRITICAL: Failed to log processed GitHub notification to database. This will cause duplicates on restart!",
+      "[PingPal GitHub] CRITICAL: Failed to log processed GitHub notification to database. This will cause duplicates on restart!"
     );
     // This is critical - we need database persistence for restart-resistant deduplication
-    throw new Error(`Database logging failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`);
+    throw new Error(
+      `Database logging failed: ${dbError instanceof Error ? dbError.message : String(dbError)}`
+    );
   }
 }
